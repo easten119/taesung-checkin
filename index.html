@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>출근 체크</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex">
+<script>
+  // 폰 종류별 분기 — 아이폰 사파리·크롬만 이 화면에서 처리, 나머지는 기존 Apps Script 화면으로
+  (function () {
+    var u = navigator.userAgent, q = location.search;
+    var ios = /iPhone|iPad|iPod/.test(u) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var inApp = /NAVER|KAKAOTALK|DaumApps|Instagram|FBAN|FBAV|Line\//.test(u);
+    if (q && (!ios || inApp)) location.replace('https://script.google.com/macros/s/AKfycbwdeyUnpj4fwrt932Es9jEh_oKmgvAT8hjvwKnLVUTKiR64lZ4EXHB4ToglZjHWb9Ex/exec' + '?p=c&' + q.slice(1));
+  })();
+</script>
+<meta charset="utf-8">
+<style>
+  :root { --bg:#F3F5F8; --card:#fff; --text:#1F2937; --muted:#6B7280; --line:#D5DBE3; --pri:#1F4E8C; --ok:#16794C; --okbg:#E7F5EE; --err:#B42318; --errbg:#FDECEA; --warn:#9A6700; --warnbg:#FFF6E0; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); min-height:100vh;
+    font-family:"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif; -webkit-text-size-adjust:100%; }
+  .wrap { max-width:440px; margin:0 auto; padding:28px 16px; }
+  .brand { font-size:13px; color:var(--muted); letter-spacing:.04em; margin-bottom:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:28px 22px; text-align:center; }
+  .icon { width:72px; height:72px; border-radius:50%; margin:0 auto 16px; display:flex; align-items:center; justify-content:center; }
+  .icon svg { width:40px; height:40px; }
+  .ok .icon { background:var(--okbg); color:var(--ok); }
+  .dup .icon { background:var(--warnbg); color:var(--warn); }
+  .err .icon { background:var(--errbg); color:var(--err); }
+  h1 { font-size:22px; font-weight:700; margin-bottom:6px; }
+  .name { font-size:18px; font-weight:500; margin-bottom:14px; }
+  .time { font-size:44px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-0.02em; }
+  .ok .time { color:var(--ok); }
+  .meta { font-size:14px; color:var(--muted); margin-top:8px; line-height:1.6; white-space:pre-line; }
+  .msg { font-size:15px; line-height:1.6; white-space:pre-line; }
+  .spin { width:36px; height:36px; border:3px solid var(--line); border-top-color:var(--pri); border-radius:50%;
+    margin:8px auto 16px; animation:r .8s linear infinite; }
+  @keyframes r { to { transform:rotate(360deg); } }
+  form { text-align:left; margin-top:18px; }
+  label { display:block; font-size:14px; font-weight:500; margin:14px 0 6px; }
+  input { width:100%; font-size:18px; padding:12px; border:1px solid var(--line); border-radius:6px; font-family:inherit; }
+  input:focus { outline:2px solid var(--pri); outline-offset:-1px; border-color:var(--pri); }
+  button { width:100%; margin-top:20px; padding:14px; font-size:17px; font-weight:700; color:#fff; background:var(--pri);
+    border:0; border-radius:6px; font-family:inherit; }
+  button:disabled { opacity:.5; }
+  .note { font-size:13px; color:var(--muted); margin-top:14px; line-height:1.6; }
+  .ferr { color:var(--err); font-size:14px; margin-top:12px; white-space:pre-line; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">TAESUNG · 출퇴근 체크</div>
+  <div class="card" id="card"><div class="spin"></div><div class="msg">확인 중…</div></div>
+</div>
+<script>
+  // ── 실행 방식: GitHub 화면 (build_page.py 가 만든 파일 — 직접 고치지 말고 Checkin.html 을 고칠 것)
+  const MODE = 'web';
+  const EXEC = 'https://script.google.com/macros/s/AKfycbwdeyUnpj4fwrt932Es9jEh_oKmgvAT8hjvwKnLVUTKiR64lZ4EXHB4ToglZjHWb9Ex/exec';
+  const QP = new URLSearchParams(location.search);
+  const DATA = { site: QP.get('s') || '', k: QP.get('k') || '', t: QP.get('t') || '' };
+  const KEY = MODE === 'web' ? 'taesung_att_device_w2' : 'taesung_att_device';
+  const PREFIX = MODE === 'web' ? 'w2_' : '';
+  const card = document.getElementById('card');
+  const ICON = {
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
+    dup: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    err: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/><circle cx="12" cy="12" r="9"/></svg>',
+  };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  function call(fn, ...args) {
+    if (MODE === 'web') {
+      // text/plain 이라 사전요청(CORS preflight) 없이 Apps Script doPost 로 바로 간다
+      return fetch(EXEC, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                           body: JSON.stringify({ pub: fn, args: args }) })
+        .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+    }
+    return new Promise((res, rej) =>
+      google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...args));
+  }
+
+  // 폰 종류 — 로그에 남겨 원인 확인용 (예: iOS·Safari, Android·네이버앱)
+  function uaLabel() {
+    const u = navigator.userAgent;
+    const os = /iPhone|iPad|iPod/.test(u) ? 'iOS' : /Android/.test(u) ? 'Android' : 'PC';
+    const app = /NAVER/.test(u) ? '네이버앱' : /KAKAOTALK/.test(u) ? '카카오톡' : /DaumApps/.test(u) ? '다음앱'
+      : /Instagram|FBAN|FBAV/.test(u) ? 'SNS앱' : /Line\//.test(u) ? '라인' : /SamsungBrowser/.test(u) ? '삼성인터넷'
+      : /CriOS|Chrome/.test(u) ? '크롬' : /Safari/.test(u) ? 'Safari' : '기타';
+    return os + '·' + app + (MODE === 'web' ? '·w2' : '');
+  }
+  const UA = uaLabel();
+
+  // 이 폰(브라우저) 고유값 — 최초 1회 만들어 저장, 이후 계속 같은 값
+  function deviceId() {
+    let d = null;
+    try { d = localStorage.getItem(KEY); } catch (e) {}
+    if (d && /^[A-Za-z0-9_-]{16,64}$/.test(d) && d.indexOf(PREFIX) === 0) return d;
+    const b = new Uint8Array(18);
+    crypto.getRandomValues(b);
+    d = PREFIX + btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    try { localStorage.setItem(KEY, d); if (localStorage.getItem(KEY) !== d) return null; } catch (e) { return null; }
+    return d;
+  }
+
+  function show(kind, html) {
+    card.className = 'card ' + kind;
+    card.innerHTML = '<div class="icon">' + ICON[kind] + '</div>' + html;
+  }
+
+  // kind: in 출근 / late 지각 / inDup 이미 출근 / outEarly 퇴근 시간 전 / out 퇴근 / outDup 이미 퇴근
+  function showResult(r) {
+    if (!r.ok) { show('err', '<h1>출근 처리 안 됨</h1><div class="msg">' + esc(r.msg) + '</div>'); return; }
+    const hm = (t) => esc(String(t || '').slice(0, 5));
+    const reg = r.note === '신규등록' ? '\n이 폰이 출근 폰으로 등록됐습니다' : r.note === '기기변경' ? '\n출근 폰이 이 폰으로 변경됐습니다'
+      : r.note === '아이폰전환' ? '\n이 폰이 출근 폰으로 등록됐습니다\n다음부터는 다시 입력하지 않아도 됩니다' : '';
+    const V = {
+      in:       ['ok',  '출근 완료',        ''],
+      late:     ['err', '지각 기록',        '출근 마감(' + r.inUntil + ')이 지나 지각으로 기록됐습니다.\n일비 출근일수에는 포함되지 않습니다.'],
+      inDup:    ['dup', '이미 출근 처리됨', '퇴근은 ' + r.outFrom + ' 이후에 찍어 주세요'],
+      outEarly: ['dup', '아직 퇴근 시간 전', '위 시각은 오늘 ' + (r.judge === '지각' ? '지각' : '출근') + ' 기록입니다\n퇴근은 ' + r.outFrom + ' 이후에 찍어 주세요'],
+      out:      ['ok',  '퇴근 완료',        r.inTime ? '오늘 출근 ' + hm(r.inTime) + (r.judge === '지각' ? ' (지각)' : '') : '오늘 출근 기록이 없습니다. 관리자에게 알려 주세요.'],
+      outDup:   ['dup', '이미 퇴근 처리됨', '오늘은 다시 찍지 않아도 됩니다'],
+    }[r.kind] || ['ok', '처리 완료', ''];
+    show(V[0], '<h1>' + V[1] + '</h1><div class="name">' + esc(r.name) + '님</div><div class="time">' + hm(r.time) +
+      '</div><div class="meta">' + esc(r.siteName) + ' · ' + esc(r.date) + (V[2] ? '\n' + esc(V[2]) : '') + reg + '</div>');
+  }
+
+  function showRegister(r, device) {
+    card.className = 'card';
+    card.innerHTML =
+      '<h1>출근 폰 등록 (최초 1회)</h1><div class="meta">' + esc(r.siteName) + '</div>' +
+      '<form id="f" autocomplete="off">' +
+      '<label for="nm">이름</label><input id="nm" required maxlength="20">' +
+      '<label for="p4">휴대폰 번호 뒷 4자리</label><input id="p4" required inputmode="numeric" pattern="[0-9]{4}" maxlength="4">' +
+      '<div class="ferr" id="fe"></div>' +
+      '<button id="bt">등록하기</button>' +
+      '<div class="note">이 폰이 본인 출근 폰으로 등록되며, 다음부터는 QR만 찍으면 됩니다. 다른 사람 출근에는 쓸 수 없습니다.</div>' +
+      '</form>';
+    document.getElementById('nm').focus();
+    document.getElementById('f').onsubmit = async (ev) => {
+      ev.preventDefault();
+      const bt = document.getElementById('bt'), fe = document.getElementById('fe');
+      bt.disabled = true; fe.textContent = '';
+      const nm = document.getElementById('nm').value, p4 = document.getElementById('p4').value;
+      try {
+        const x = await call('register', DATA.site, device, r.ticket, r.issued, nm, p4, false, UA);
+        if (!x.ok && x.retry) { fe.textContent = x.msg; bt.disabled = false; return; }
+        if (x.need === 'confirmChange') { showConfirmChange(x, r, device, nm, p4); return; }
+        showResult(x);
+      } catch (e) {
+        fe.textContent = '서버 연결 오류입니다. 잠시 후 다시 시도해 주세요.'; bt.disabled = false;
+      }
+    };
+  }
+
+  // 이미 다른 앱·폰으로 등록된 직원 — 실수(앱을 바꿔 찍음)면 원래 방법으로, 폰 교체면 변경
+  function showConfirmChange(x, r, device, nm, p4) {
+    show('err', '<h1>출근 처리 안 됨</h1><div class="name">' + esc(x.name) + '님 · 이미 등록된 직원</div>' +
+      '<div class="msg">다른 앱(또는 다른 폰)으로 이미 등록돼 있습니다.\n<b>평소 찍던 방법(처음 등록한 앱)으로</b> 다시 찍어 주세요.</div>' +
+      '<div class="note">예: 네이버앱으로 등록했다면 네이버앱으로, 기본 카메라로 등록했다면 기본 카메라로</div>' +
+      '<button id="chg" style="background:#fff;color:var(--pri);border:1px solid var(--pri);margin-top:24px">폰을 바꿨어요 — 이 폰으로 변경</button>' +
+      '<div class="ferr" id="ce"></div>');
+    document.getElementById('chg').onclick = async () => {
+      const b = document.getElementById('chg');
+      b.disabled = true;
+      try {
+        showResult(await call('register', DATA.site, device, r.ticket, r.issued, nm, p4, true, UA));
+      } catch (e) {
+        document.getElementById('ce').textContent = '서버 연결 오류입니다. 잠시 후 다시 시도해 주세요.'; b.disabled = false;
+      }
+    };
+  }
+
+  (async function main() {
+    if (!DATA.site) { show('err', '<h1>출근 체크</h1><div class="msg">현장 입구의 QR 코드를 휴대폰 카메라로 찍어 주세요.</div>'); return; }
+    const device = deviceId();
+    if (!device) {
+      call('clientLog', DATA.site, UA, '저장 불가 브라우저').catch(() => {});
+      show('err', '<h1>이 브라우저는 사용할 수 없습니다</h1><div class="msg">저장 기능이 꺼져 있습니다 (사파리 개인정보 보호 모드·시크릿 창 등).\n일반 창의 크롬 또는 사파리로 다시 스캔해 주세요.</div>');
+      return;
+    }
+    try {
+      const r = await call('checkin', DATA.site, DATA.k, DATA.t, device, UA);
+      if (r.need === 'register') showRegister(r, device);
+      else showResult(r);
+    } catch (e) {
+      show('err', '<h1>연결 오류</h1><div class="msg">서버에 연결하지 못했습니다.\nQR을 다시 스캔해 주세요.</div>');
+    }
+  })();
+</script>
+</body>
+</html>
